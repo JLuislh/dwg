@@ -1,0 +1,57 @@
+============================================================
+ VISOR DE DRAWINGS Y FOTOS POR P/N  -  Web local
+============================================================
+
+QUE HACE
+  Escanea recursivamente las carpetas del NAS:
+    \\nas\Compartida Produccion\DRAWINGS
+    \\nas\Compartida Produccion\FOTO DE PIEZAS (desde 2019)
+  Agrupa todo por P/N (nombre de la carpeta final) y te deja:
+    - Buscar por P/N o categoria
+    - Ver los PDF (DRAWINGS) en un visor
+    - Ver las fotos en galeria con lightbox
+  Un mismo P/N junta sus DRAWINGS Y sus fotos aunque esten en rutas distintas.
+
+REQUISITOS
+  1. Node.js instalado  ->  https://nodejs.org  (version LTS)
+  2. La PC donde corre debe tener acceso a \\nas (probar abriendo
+     \\nas\Compartida Produccion en el Explorador).
+
+INSTALAR (una sola vez)
+  1. Copia esta carpeta a la PC servidor (ej. C:\visor-pn).
+  2. Abre CMD en esa carpeta y ejecuta:
+        npm install
+
+CONFIGURAR (si las rutas del NAS cambian)
+  Edita server.js, seccion FUENTES. Las rutas UNC van con doble \\:
+        drawings: '\\\\nas\\Compartida Produccion\\DRAWINGS',
+        fotos:    '\\\\nas\\Compartida Produccion\\FOTO DE PIEZAS (desde 2019)'
+
+ARRANCAR
+        npm start
+  Veras la direccion. Abre en el navegador:
+        http://localhost:3000
+  Desde otras PC de la red:
+        http://IP-DE-ESTA-PC:3000      (ej. http://192.168.1.50:3000)
+  (Para saber la IP: en CMD escribe  ipconfig )
+
+PRIMERA VEZ / ACTUALIZAR INDICE
+  El primer escaneo del NAS puede tardar (es sobre red). Despues queda
+  guardado en index-cache.json y arranca al instante.
+  Cuando agregues planos o fotos nuevas, presiona el boton "Reindexar"
+  arriba a la derecha (o visita http://localhost:3000/api/reindex).
+
+DEJARLO CORRIENDO SIEMPRE (opcional, recomendado)
+  Instala PM2 para que arranque solo y se reinicie:
+        npm install -g pm2
+        pm2 start server.js --name visor-pn
+        pm2 save
+        pm2 startup        (sigue las instrucciones que muestre)
+
+ABRIR EL PUERTO EN EL FIREWALL (para acceso desde la red)
+  Panel de control > Firewall de Windows > Reglas de entrada >
+  Nueva regla > Puerto > TCP 3000 > Permitir.
+
+NOTAS
+  - Solo lee archivos, nunca modifica ni borra nada del NAS.
+  - Formatos: PDF para planos; jpg/jpeg/png/gif/bmp/webp/tif para fotos.

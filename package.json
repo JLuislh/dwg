@@ -1,0 +1,13 @@
+{
+  "name": "visor-pn",
+  "version": "1.0.0",
+  "description": "Visor de planos (DWG/PDF) y fotos por P/N desde el NAS",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "reindex": "node -e \"require('http').get('http://localhost:3000/api/reindex',r=>r.pipe(process.stdout))\""
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
