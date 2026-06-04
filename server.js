@@ -31,7 +31,8 @@ const EXT_IMG = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tif
 // --------------------------------------------------------------------
 // Escaneo recursivo: junta archivos por carpeta contenedora (= P/N)
 // --------------------------------------------------------------------
-function escanear(base, tipo, index, nivel = 0) {
+// pnFolder: ruta absoluta de la carpeta que actúa como P/N (null hasta que se identifica)
+function escanear(base, tipo, index, nivel = 0, pnFolder = null) {
   let entradas;
   try {
     entradas = fs.readdirSync(base, { withFileTypes: true });
@@ -40,48 +41,53 @@ function escanear(base, tipo, index, nivel = 0) {
     return;
   }
 
-  // Log de progreso para categorías principales
   if (nivel === 1) console.log(`    [${tipo}] Leyendo: ${path.basename(base)}...`);
+
+  // Determinar si esta carpeta es el P/N:
+  // - Si ya tenemos pnFolder, lo mantenemos (estamos dentro de un P/N).
+  // - En nivel 1 (bajo la raíz): si tiene archivos directos → es el P/N;
+  //   si solo tiene subcarpetas → es una categoría, seguimos sin P/N.
+  // - En nivel >= 2 sin P/N aún: esta carpeta ES el P/N (directo o sin categoría).
+  let myPnFolder = pnFolder;
+  if (myPnFolder === null && nivel > 0) {
+    const tieneArchivosDirect = entradas.some(e => {
+      if (e.isDirectory()) return false;
+      const ext = path.extname(e.name).toLowerCase();
+      return EXT_PLANO.includes(ext) || EXT_IMG.includes(ext);
+    });
+    if (tieneArchivosDirect || nivel >= 2) {
+      myPnFolder = base;
+    }
+  }
 
   for (const e of entradas) {
     const full = path.join(base, e.name);
     if (e.isDirectory()) {
-      escanear(full, tipo, index, nivel + 1);
+      escanear(full, tipo, index, nivel + 1, myPnFolder);
     } else {
       const ext = path.extname(e.name).toLowerCase();
       const esPlano = EXT_PLANO.includes(ext);
       const esImg = EXT_IMG.includes(ext);
       if (!esPlano && !esImg) continue;
+      if (!myPnFolder) continue;
 
-      const rel = path.relative(FUENTES[tipo], full);
-      const partes = rel.split(path.sep);
-
-      // P/N = carpeta de profundidad 2 (CATEGORIA/PN/[sub/]archivo)
-      // Si solo hay 1 nivel de carpeta (PN/archivo), ese es el P/N.
-      // Archivos sueltos en la raíz se ignoran.
-      let pn;
-      if (partes.length >= 3) {
-        pn = partes[1];
-      } else if (partes.length === 2) {
-        pn = partes[0];
-      } else {
-        continue;
-      }
-
+      const pn = path.basename(myPnFolder);
       const clave = pn.toUpperCase();
       if (!index[clave]) {
         index[clave] = { pn, pdfs: [], fotos: [], categorias: new Set() };
       }
 
-      // categoría = primer nivel debajo de la fuente (TRANSFORMERS, CHOKES, ...)
-      if (partes.length > 1) {
-        index[clave].categorias.add(partes[0]);
-      }
+      // Categoría = primera carpeta entre la raíz y el P/N
+      const relPn = path.relative(FUENTES[tipo], myPnFolder);
+      const partesPn = relPn.split(path.sep);
+      if (partesPn.length > 1) index[clave].categorias.add(partesPn[0]);
 
-      // subcarpeta relativa al P/N (null si está directo)
-      const subcarpeta = partes.length > 3 ? partes.slice(2, -1).join('/') : null;
+      // Subcarpeta = ruta entre la carpeta P/N y el archivo
+      const relFromPn = path.relative(myPnFolder, path.dirname(full));
+      const subcarpeta = relFromPn || null;
 
-      const url = '/files/' + tipo + '/' + partes.map(encodeURIComponent).join('/');
+      const rel = path.relative(FUENTES[tipo], full);
+      const url = '/files/' + tipo + '/' + rel.split(path.sep).map(encodeURIComponent).join('/');
       (esPlano ? index[clave].pdfs : index[clave].fotos)
         .push({ nombre: e.name, url, subcarpeta });
     }
