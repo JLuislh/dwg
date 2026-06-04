@@ -12,12 +12,15 @@ const HOST = '0.0.0.0';            // accesible desde otras PCs de la red
 
 // ---- Rutas del servidor de archivos --------------------------------
 // Usa rutas UNC. En Windows van con doble backslash dentro del string.
-// Rutas configurables por variable de entorno.
-// Producción (AlmaLinux): /mnt/nas/drawings  y  /mnt/nas/fotos  (por defecto)
-// Desarrollo  (Windows):  set PATH_DRAWINGS=.\test_nas\DRAWINGS && npm start
+// Rutas: variable de entorno > auto-detección por SO > rutas por defecto
+const isWin = process.platform === 'win32';
 const FUENTES = {
-  drawings: process.env.PATH_DRAWINGS || '/mnt/nas/drawings',
-  fotos:    process.env.PATH_FOTOS    || '/mnt/nas/fotos'
+  drawings: process.env.PATH_DRAWINGS || (isWin
+    ? path.normalize('\\\\nas\\Compartida Produccion\\DRAWINGS')
+    : '/mnt/nas/drawings'),
+  fotos: process.env.PATH_FOTOS || (isWin
+    ? path.normalize('\\\\nas\\Compartida Produccion\\FOTO DE PIEZAS (desde 2019)')
+    : '/mnt/nas/fotos')
 };
 
 const ARCHIVO_CACHE = path.join(__dirname, 'index-cache.json');
