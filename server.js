@@ -49,13 +49,19 @@ function escanear(base, tipo, index, nivel = 0) {
       const esImg = EXT_IMG.includes(ext);
       if (!esPlano && !esImg) continue;
 
-      // El P/N es el nombre de la carpeta que contiene el archivo.
-      // Pero si esa carpeta se llama "DRAWINGS" o "FOTOS", subimos una más.
-      let carpeta = path.dirname(full);
-      let pn = path.basename(carpeta);
-      const genericas = ['drawings', 'fotos', 'foto', 'photos', 'imagenes', 'images'];
-      if (genericas.includes(pn.toLowerCase())) {
-        pn = path.basename(path.dirname(carpeta));
+      const rel = path.relative(FUENTES[tipo], full);
+      const partes = rel.split(path.sep);
+
+      // P/N = carpeta de profundidad 2 (CATEGORIA/PN/[sub/]archivo)
+      // Si solo hay 1 nivel de carpeta (PN/archivo), ese es el P/N.
+      // Archivos sueltos en la raíz se ignoran.
+      let pn;
+      if (partes.length >= 3) {
+        pn = partes[1];
+      } else if (partes.length === 2) {
+        pn = partes[0];
+      } else {
+        continue;
       }
 
       const clave = pn.toUpperCase();
@@ -64,16 +70,16 @@ function escanear(base, tipo, index, nivel = 0) {
       }
 
       // categoría = primer nivel debajo de la fuente (TRANSFORMERS, CHOKES, ...)
-      const rel = path.relative(FUENTES[tipo], full);
-      const partes = rel.split(path.sep);
-      // La categoría es el primer nivel de carpeta
       if (partes.length > 1) {
         index[clave].categorias.add(partes[0]);
       }
 
+      // subcarpeta relativa al P/N (null si está directo)
+      const subcarpeta = partes.length > 3 ? partes.slice(2, -1).join('/') : null;
+
       const url = '/files/' + tipo + '/' + partes.map(encodeURIComponent).join('/');
       (esPlano ? index[clave].pdfs : index[clave].fotos)
-        .push({ nombre: e.name, url });
+        .push({ nombre: e.name, url, subcarpeta });
     }
   }
 }

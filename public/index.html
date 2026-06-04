@@ -261,13 +261,12 @@ function setMode(m){
 
 function renderPdf(){
   const files = current.pdfs;
-  // Mostrar el wrapper (con flechas) si hay archivos
   $('#filesWrapper').style.display = files.length > 0 ? 'flex' : 'none';
-  
-  // Renderizar chips dentro del contenedor
+  $('#files').style.display = '';   // restaurar si venimos del modo fotos
+
   $('#files').innerHTML = files.map((f,i)=>
     `<div class="chip ${i===0?'sel':''}" onclick="showPdf(${i},this)">
-      ${f.nombre.toLowerCase().endsWith('.dwg') ? '<span style="color:var(--accent)">DWG</span> ' : ''}${esc(f.nombre)}
+      ${f.subcarpeta ? `<span style="color:var(--dim);font-size:10px">${esc(f.subcarpeta)} / </span>` : ''}${f.nombre.toLowerCase().endsWith('.dwg') ? '<span style="color:var(--accent)">DWG</span> ' : ''}${esc(f.nombre)}
     </div>`).join('');
 
   if(files.length > 0) showPdf(0);
@@ -294,8 +293,7 @@ function showPdf(i, chip){
 }
 
 function renderImg(){
-  $('#files').style.display='none';
-  $('#filesWrapper').style.display='none'; // Ocultar el wrapper de archivos
+  $('#filesWrapper').style.display='none';
   gallery = current.fotos;
   $('#stage').innerHTML = `<div class="gallery">${
     gallery.map((f,i)=>`
