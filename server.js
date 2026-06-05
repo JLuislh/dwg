@@ -184,6 +184,14 @@ app.get('/api/reindex', (req, res) => {
   res.json({ ok: true, total: CACHE.total, generado: CACHE.generado });
 });
 
+// Diagnóstico: ver archivos crudos de un P/N
+app.get('/api/debug/:pn', (req, res) => {
+  const pn = req.params.pn.toUpperCase();
+  const item = CACHE && CACHE.items.find(i => i.pn.toUpperCase() === pn);
+  if (!item) return res.json({ error: 'P/N no encontrado' });
+  res.json({ pn: item.pn, categorias: item.categorias, pdfs: item.pdfs, fotos: item.fotos.map(f=>f.nombre) });
+});
+
 // Servir los archivos reales del NAS
 app.use('/files/drawings', express.static(FUENTES.drawings));
 app.use('/files/fotos', express.static(FUENTES.fotos));
