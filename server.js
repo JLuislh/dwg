@@ -190,6 +190,20 @@ app.get('/api/debug-pdfs', (req, res) => {
   res.json({ total: conPdfs.length, items: conPdfs });
 });
 
+// Diagnóstico: buscar en qué P/N cayó un archivo por nombre parcial
+app.get('/api/debug-find', (req, res) => {
+  const q = (req.query.q || '').toUpperCase();
+  if (!q || !CACHE) return res.json({ error: 'Falta ?q=nombre' });
+  const resultados = [];
+  for (const item of CACHE.items) {
+    for (const f of item.pdfs) {
+      if (f.nombre.toUpperCase().includes(q))
+        resultados.push({ pn: item.pn, categorias: item.categorias, archivo: f.nombre, subcarpeta: f.subcarpeta, url: f.url });
+    }
+  }
+  res.json({ encontrados: resultados.length, resultados });
+});
+
 // Servir los archivos reales del NAS
 app.use('/files/drawings', express.static(FUENTES.drawings));
 app.use('/files/fotos', express.static(FUENTES.fotos));
