@@ -52,31 +52,32 @@ function escanear(base, tipo, index, nivel = 0) {
       const esImg = EXT_IMG.includes(ext);
       if (!esPlano && !esImg) continue;
 
-      const rel = path.relative(FUENTES[tipo], full);
-      const partes = rel.split(path.sep);
+      // Subir desde la carpeta del archivo hasta encontrar la carpeta P/N.
+      // Una carpeta P/N empieza con dígito (30316, 34563, …).
+      // Las categorías son palabras sin dígito inicial (TRANSFORMERS, DRAWINGS, CUSTOM…).
+      let pnDir = path.dirname(full);
+      while (pnDir !== FUENTES[tipo] && !/^\d/.test(path.basename(pnDir))) {
+        pnDir = path.dirname(pnDir);
+      }
+      if (pnDir === FUENTES[tipo]) continue; // no se encontró carpeta P/N, ignorar
 
-      // partes: [cat?, pn, sub?..., archivo]
-      // Depth 1 (pn/archivo): pn = partes[0]
-      // Depth 2+ (cat/pn/[sub/]archivo): pn = partes[1]
-      let pn, subOffset;
-      if (partes.length === 1) continue;           // archivo en raíz, ignorar
-      if (partes.length === 2) { pn = partes[0]; subOffset = 1; }  // pn/archivo
-      else                     { pn = partes[1]; subOffset = 2; }  // cat/pn/[sub/]archivo
-
+      const pn = path.basename(pnDir);
       const clave = pn.toUpperCase();
       if (!index[clave]) {
         index[clave] = { pn, pdfs: [], fotos: [], categorias: new Set() };
       }
 
-      // Categoría = partes[0] cuando hay profundidad ≥ 3
-      if (partes.length >= 3) index[clave].categorias.add(partes[0]);
+      // Categoría = primera carpeta entre la raíz y el P/N
+      const relPnDir = path.relative(FUENTES[tipo], pnDir);
+      const partesPn = relPnDir.split(path.sep);
+      if (partesPn.length > 1) index[clave].categorias.add(partesPn[0]);
 
-      // Subcarpeta = carpetas entre el P/N y el archivo (si las hay)
-      const subcarpeta = partes.length > subOffset + 1
-        ? partes.slice(subOffset, -1).join('/')
-        : null;
+      // Subcarpeta = ruta entre el P/N y el directorio del archivo
+      const relSub = path.relative(pnDir, path.dirname(full));
+      const subcarpeta = relSub ? relSub.split(path.sep).join('/') : null;
 
-      const url = '/files/' + tipo + '/' + partes.map(encodeURIComponent).join('/');
+      const rel = path.relative(FUENTES[tipo], full);
+      const url = '/files/' + tipo + '/' + rel.split(path.sep).map(encodeURIComponent).join('/');
       (esPlano ? index[clave].pdfs : index[clave].fotos)
         .push({ nombre: e.name, url, subcarpeta });
     }
