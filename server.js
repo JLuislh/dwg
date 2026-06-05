@@ -192,6 +192,15 @@ app.get('/api/debug/:pn', (req, res) => {
   res.json({ pn: item.pn, categorias: item.categorias, pdfs: item.pdfs, fotos: item.fotos.map(f=>f.nombre) });
 });
 
+// Diagnóstico: listar todos los P/N que tienen PDFs
+app.get('/api/debug-pdfs', (req, res) => {
+  if (!CACHE) return res.json({ error: 'Sin caché' });
+  const conPdfs = CACHE.items
+    .filter(i => i.nPdf > 0)
+    .map(i => ({ pn: i.pn, nPdf: i.nPdf, categorias: i.categorias, pdfs: i.pdfs.map(f => f.nombre + (f.subcarpeta ? ' ['+f.subcarpeta+']' : '')) }));
+  res.json({ total: conPdfs.length, items: conPdfs });
+});
+
 // Servir los archivos reales del NAS
 app.use('/files/drawings', express.static(FUENTES.drawings));
 app.use('/files/fotos', express.static(FUENTES.fotos));
