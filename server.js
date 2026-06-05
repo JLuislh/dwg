@@ -231,8 +231,17 @@ app.get('/api/debug-find', (req, res) => {
 });
 
 // Servir los archivos reales del NAS
-app.use('/files/drawings', express.static(FUENTES.drawings));
-app.use('/files/fotos', express.static(FUENTES.fotos));
+// Forzar Content-Disposition:inline para PDFs (evita el cuadro "Guardar como")
+const pdfHeaders = {
+  setHeaders(res, filePath) {
+    if (path.extname(filePath).toLowerCase() === '.pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline');
+    }
+  }
+};
+app.use('/files/drawings', express.static(FUENTES.drawings, pdfHeaders));
+app.use('/files/fotos',    express.static(FUENTES.fotos));
 
 // Frontend
 app.use(express.static(path.join(__dirname, 'public')));
