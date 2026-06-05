@@ -369,22 +369,14 @@ function showBrowseFile(i, chip){
   showBrowseFileByObj(browseFiles[i]);
 }
 
-function showBrowseFileByObj(f){
+let _blobUrl = null;
+
+async function showBrowseFileByObj(f){
   if(!f) return;
   if(f.nombre.toLowerCase().endsWith('.dwg')){
-    $('#stage').innerHTML = `
-      <div class="empty">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="stroke:var(--accent);width:64px;height:64px">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-        </svg>
-        <h2 style="color:var(--txt)">Archivo AutoCAD (DWG)</h2>
-        <p>Los navegadores no pueden mostrar DWG directamente.</p>
-        <a href="${f.url}" download="${f.nombre}" class="btn" style="margin-top:15px;border-color:var(--accent);color:var(--accent);text-decoration:none;display:inline-block;padding:10px 20px">
-          Descargar ${esc(f.nombre)}
-        </a>
-      </div>`;
+    mostrarDwg(f.url, f.nombre);
   } else {
-    $('#stage').innerHTML = `<iframe src="${f.url}"></iframe>`;
+    await mostrarPdf(f.url, f.nombre);
   }
 }
 
@@ -393,19 +385,50 @@ function showPdf(i, chip){
   if(chip){document.querySelectorAll('#files .chip').forEach(c=>c.classList.remove('sel'));chip.classList.add('sel');}
   const f = current.pdfs[i];
   if(f.nombre.toLowerCase().endsWith('.dwg')){
+    mostrarDwg(f.url, f.nombre);
+  } else {
+    mostrarPdf(f.url, f.nombre);
+  }
+}
+
+function mostrarDwg(url, nombre){
+  $('#stage').innerHTML = `
+    <div class="empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="stroke:var(--accent);width:64px;height:64px">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+      </svg>
+      <h2 style="color:var(--txt)">Archivo AutoCAD (DWG)</h2>
+      <p>Los navegadores no pueden mostrar DWG directamente.</p>
+      <a href="${url}" download="${nombre}" class="btn" style="margin-top:15px;border-color:var(--accent);color:var(--accent);text-decoration:none;display:inline-block;padding:10px 20px">
+        Descargar ${esc(nombre)}
+      </a>
+    </div>`;
+}
+
+async function mostrarPdf(url, nombre){
+  $('#stage').innerHTML = `<div class="empty"><h2>Cargando…</h2></div>`;
+
+  // Liberar blob anterior
+  if(_blobUrl){ URL.revokeObjectURL(_blobUrl); _blobUrl = null; }
+
+  try {
+    const resp = await fetch(url);
+    if(!resp.ok) throw new Error('Error ' + resp.status + ' al leer el archivo');
+    const bytes = await resp.arrayBuffer();
+    // Forzar tipo application/pdf independientemente de los headers del servidor
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    _blobUrl = URL.createObjectURL(blob);
+    $('#stage').innerHTML = `<iframe src="${_blobUrl}"></iframe>`;
+  } catch(err) {
     $('#stage').innerHTML = `
       <div class="empty">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="stroke:var(--accent);width:64px;height:64px">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-        </svg>
-        <h2 style="color:var(--txt)">Archivo AutoCAD (DWG)</h2>
-        <p>Los navegadores no pueden mostrar DWG directamente.</p>
-        <a href="${f.url}" download="${f.nombre}" class="btn" style="margin-top:15px;border-color:var(--accent);color:var(--accent);text-decoration:none;display:inline-block;padding:10px 20px">
-          Descargar ${esc(f.nombre)}
+        <h2>No se pudo mostrar</h2>
+        <p style="font-family:var(--mono);font-size:12px">${esc(String(err))}</p>
+        <a href="${url}" target="_blank" class="btn"
+           style="margin-top:15px;border-color:var(--accent2);color:var(--accent2);text-decoration:none;display:inline-block;padding:10px 20px">
+          Abrir en nueva pestaña
         </a>
       </div>`;
-  } else {
-    $('#stage').innerHTML = `<iframe src="${f.url}"></iframe>`;
   }
 }
 
