@@ -274,11 +274,15 @@ function setMode(m){
 function renderPdf(){
   $('#files').style.display = '';
   browsePathParts = [];
+  browseRootPath = null;
 
   if (current.drawingsDirs && current.drawingsDirs.length > 0) {
-    // Modo navegador: usar la carpeta P/N del NAS directamente
-    browseRootPath = current.drawingsDirs[0];
-    browseDir();
+    if (current.drawingsDirs.length === 1) {
+      browseRootPath = current.drawingsDirs[0];
+      browseDir();
+    } else {
+      mostrarSelectorUbicacion();
+    }
   } else {
     // Fallback: lista plana de PDFs indexados
     $('#breadcrumb').style.display = 'none';
@@ -293,18 +297,61 @@ function renderPdf(){
   }
 }
 
+function mostrarSelectorUbicacion(){
+  $('#breadcrumb').style.display = 'none';
+  const chips = current.drawingsDirs.map((dir, i) => {
+    // Mostrar la ruta de categoría (todo excepto el último segmento = nombre PN)
+    const partes = dir.split('/');
+    const categoria = partes.slice(0, -1).join(' / ') || dir;
+    return `<div class="chip dir" onclick="seleccionarUbicacion(${i})">▸ ${esc(categoria)}</div>`;
+  });
+  $('#files').innerHTML = chips.join('');
+  $('#filesWrapper').style.display = 'flex';
+  $('#stage').innerHTML = `<div class="empty">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+    <h2>Varias ubicaciones</h2>
+    <p>El P/N <b style="color:var(--txt)">${esc(current.pn)}</b> existe en ${current.drawingsDirs.length} carpetas distintas.<br>Selecciona cuál quieres ver.</p>
+  </div>`;
+  updateScrollArrows();
+}
+
+function seleccionarUbicacion(i){
+  browseRootPath = current.drawingsDirs[i];
+  browsePathParts = [];
+  browseDir();
+}
+
+function volverAlSelector(){
+  browsePathParts = [];
+  if (current.drawingsDirs && current.drawingsDirs.length > 1) {
+    browseRootPath = null;
+    mostrarSelectorUbicacion();
+  } else {
+    browseDir();
+  }
+}
+
 async function browseDir(){
   const relPath = browseRootPath + (browsePathParts.length ? '/' + browsePathParts.join('/') : '');
 
   // Breadcrumb
-  const crumbs = [current.pn, ...browsePathParts];
   const bc = $('#breadcrumb');
+  const multiDir = current.drawingsDirs && current.drawingsDirs.length > 1;
+  const crumbs = []; // [{label, onclick}]
+  crumbs.push({ label: current.pn, fn: 'volverAlSelector()' });
+  if (multiDir) {
+    // Mostrar la categoría de la ubicación actual como segundo nivel
+    const partes = browseRootPath.split('/');
+    const cat = partes.slice(0, -1).join(' / ');
+    if (cat) crumbs.push({ label: cat, fn: 'browseBack(0)' });
+  }
+  browsePathParts.forEach((part, i) => crumbs.push({ label: part, fn: `browseBack(${i + 1})` }));
+
   if (crumbs.length > 1) {
     bc.style.display = 'flex';
-    bc.innerHTML = crumbs.map((label, i) => {
-      if (i === crumbs.length - 1)
-        return `<span class="cur">${esc(label)}</span>`;
-      return `<span class="crumb" onclick="browseBack(${i})">${esc(label)}</span>`;
+    bc.innerHTML = crumbs.map((c, i) => {
+      if (i === crumbs.length - 1) return `<span class="cur">${esc(c.label)}</span>`;
+      return `<span class="crumb" onclick="${c.fn}">${esc(c.label)}</span>`;
     }).join('<span class="sep"> › </span>');
   } else {
     bc.style.display = 'none';
@@ -356,7 +403,6 @@ function browseInto(folderName){
 }
 
 function browseBack(level){
-  // level=0 → volver al root del P/N; level=n → volver a ese nivel
   browsePathParts = browsePathParts.slice(0, level);
   browseDir();
 }
