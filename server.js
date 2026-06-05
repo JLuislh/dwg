@@ -11,7 +11,6 @@ const PORT = 3000;
 const HOST = '0.0.0.0';            // accesible desde otras PCs de la red
 
 // ---- Rutas del servidor de archivos --------------------------------
-// Usa rutas UNC. En Windows van con doble backslash dentro del string.
 // Rutas: variable de entorno > auto-detección por SO > rutas por defecto
 const isWin = process.platform === 'win32';
 const FUENTES = {
@@ -53,24 +52,29 @@ function escanear(base, tipo, index, nivel = 0) {
       if (!esPlano && !esImg) continue;
 
       // Subir desde la carpeta del archivo hasta encontrar la carpeta P/N.
-      // Una carpeta P/N empieza con dígito (30316, 34563, …).
-      // Las categorías son palabras sin dígito inicial (TRANSFORMERS, DRAWINGS, CUSTOM…).
+      // Una carpeta P/N empieza con dígito (30316, 34563…).
+      // Las categorías son palabras sin dígito inicial (TRANSFORMERS, DRAWINGS…).
       let pnDir = path.dirname(full);
       while (pnDir !== FUENTES[tipo] && !/^\d/.test(path.basename(pnDir))) {
         pnDir = path.dirname(pnDir);
       }
-      if (pnDir === FUENTES[tipo]) continue; // no se encontró carpeta P/N, ignorar
+      if (pnDir === FUENTES[tipo]) continue;
 
       const pn = path.basename(pnDir);
       const clave = pn.toUpperCase();
       if (!index[clave]) {
-        index[clave] = { pn, pdfs: [], fotos: [], categorias: new Set() };
+        index[clave] = { pn, pdfs: [], fotos: [], categorias: new Set(), drawingsDirs: new Set() };
       }
 
       // Categoría = primera carpeta entre la raíz y el P/N
       const relPnDir = path.relative(FUENTES[tipo], pnDir);
       const partesPn = relPnDir.split(path.sep);
       if (partesPn.length > 1) index[clave].categorias.add(partesPn[0]);
+
+      // Guardar la ruta relativa de la carpeta P/N (para el navegador de carpetas)
+      if (tipo === 'drawings') {
+        index[clave].drawingsDirs.add(relPnDir.split(path.sep).join('/'));
+      }
 
       // Subcarpeta = ruta entre el P/N y el directorio del archivo
       const relSub = path.relative(pnDir, path.dirname(full));
@@ -88,7 +92,6 @@ function construirIndice() {
   console.log('--- Iniciando escaneo del NAS ---');
   const t0 = Date.now();
 
-  // Verificar acceso a las rutas antes de empezar
   for (const [key, ruta] of Object.entries(FUENTES)) {
     try {
       fs.accessSync(ruta, fs.constants.R_OK);
@@ -109,6 +112,7 @@ function construirIndice() {
       pdfs: o.pdfs,
       fotos: o.fotos,
       categorias: [...o.categorias],
+      drawingsDirs: [...(o.drawingsDirs || [])],
       nPdf: o.pdfs.length,
       nFoto: o.fotos.length,
       totalArchivos: o.pdfs.length + o.fotos.length
@@ -135,7 +139,6 @@ function cargarCache() {
       const raw = fs.readFileSync(ARCHIVO_CACHE, 'utf8');
       if (!raw) return null;
       const data = JSON.parse(raw);
-      // Validar formato y que no esté vacío (si está vacío, preferimos reindexar)
       if (data && Array.isArray(data.items) && data.items.length > 0) {
         console.log(`Caché cargado: ${data.items.length} P/N desde index-cache.json`);
         return data;
@@ -147,7 +150,6 @@ function cargarCache() {
   return null;
 }
 
-// Forzar carga inicial
 let CACHE = cargarCache() || construirIndice();
 
 // --------------------------------------------------------------------
@@ -155,13 +157,8 @@ let CACHE = cargarCache() || construirIndice();
 // --------------------------------------------------------------------
 app.get('/api/index', (req, res) => {
   const q = (req.query.q || '').trim().toUpperCase();
-  
-  if (!CACHE) {
-    return res.json({ generado: null, total: 0, items: [], error: "Caché no disponible" });
-  }
-
+  if (!CACHE) return res.json({ generado: null, total: 0, items: [], error: 'Caché no disponible' });
   if (!q) return res.json(CACHE);
-
   const items = CACHE.items.filter(it =>
     it.pn.toUpperCase().includes(q) ||
     it.categorias.some(c => c.toUpperCase().includes(q))
@@ -174,24 +171,52 @@ app.get('/api/reindex', (req, res) => {
   res.json({ ok: true, total: CACHE.total, generado: CACHE.generado });
 });
 
+// Navegador de carpetas: lista archivos y subcarpetas de una ruta del NAS
+app.get('/api/browse', (req, res) => {
+  const source = req.query.source;
+  if (!source || !FUENTES[source]) return res.status(400).json({ error: 'source inválido' });
+
+  const base = path.resolve(FUENTES[source]);
+  // Sanitizar: no permitir .. para salir del directorio base
+  const relRaw = (req.query.path || '').replace(/\.\./g, '').replace(/^\/+/, '');
+  const relNorm = relRaw.split('/').join(path.sep);
+  const fullPath = relNorm ? path.resolve(path.join(FUENTES[source], relNorm)) : base;
+
+  if (!fullPath.startsWith(base)) return res.status(403).json({ error: 'Acceso denegado' });
+
+  let entries;
+  try {
+    entries = fs.readdirSync(fullPath, { withFileTypes: true });
+  } catch (e) {
+    return res.status(404).json({ error: 'No se pudo leer: ' + e.message });
+  }
+
+  const archivos = [], subcarpetas = [];
+  for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (e.isDirectory()) {
+      subcarpetas.push(e.name);
+    } else {
+      const ext = path.extname(e.name).toLowerCase();
+      if (EXT_PLANO.includes(ext)) {
+        const parts = relRaw ? relRaw.split('/').concat(e.name) : [e.name];
+        const url = '/files/' + source + '/' + parts.map(encodeURIComponent).join('/');
+        archivos.push({ nombre: e.name, url });
+      }
+    }
+  }
+
+  res.json({ path: relRaw, archivos, subcarpetas });
+});
+
 // Diagnóstico: ver archivos crudos de un P/N
 app.get('/api/debug/:pn', (req, res) => {
   const pn = req.params.pn.toUpperCase();
   const item = CACHE && CACHE.items.find(i => i.pn.toUpperCase() === pn);
   if (!item) return res.json({ error: 'P/N no encontrado' });
-  res.json({ pn: item.pn, categorias: item.categorias, pdfs: item.pdfs, fotos: item.fotos.map(f=>f.nombre) });
+  res.json({ pn: item.pn, categorias: item.categorias, drawingsDirs: item.drawingsDirs, pdfs: item.pdfs, fotos: item.fotos.map(f => f.nombre) });
 });
 
-// Diagnóstico: listar todos los P/N que tienen PDFs
-app.get('/api/debug-pdfs', (req, res) => {
-  if (!CACHE) return res.json({ error: 'Sin caché' });
-  const conPdfs = CACHE.items
-    .filter(i => i.nPdf > 0)
-    .map(i => ({ pn: i.pn, nPdf: i.nPdf, categorias: i.categorias, pdfs: i.pdfs.map(f => f.nombre + (f.subcarpeta ? ' ['+f.subcarpeta+']' : '')) }));
-  res.json({ total: conPdfs.length, items: conPdfs });
-});
-
-// Diagnóstico: buscar en qué P/N cayó un archivo por nombre parcial
+// Diagnóstico: buscar en qué P/N cayó un archivo
 app.get('/api/debug-find', (req, res) => {
   const q = (req.query.q || '').toUpperCase();
   if (!q || !CACHE) return res.json({ error: 'Falta ?q=nombre' });

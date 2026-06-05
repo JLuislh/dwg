@@ -79,43 +79,45 @@
   .switch button.on{background:var(--accent);color:#1a1200;font-weight:600}
   .switch button:disabled{opacity:.35;cursor:not-allowed}
   .stage{flex:1;overflow-y:auto;overflow-x:hidden;position:relative;min-height:0}
-  /* files row */
-  /* files row with scroll arrows */
+  /* ---------- Breadcrumb ---------- */
+  .breadcrumb{
+    display:none;align-items:center;gap:4px;padding:5px 16px;
+    background:var(--panel);border-bottom:1px solid var(--line);
+    font-size:11px;font-family:var(--mono);flex-wrap:wrap;min-height:28px;
+  }
+  .breadcrumb .crumb{color:var(--accent2);cursor:pointer;padding:1px 4px;border-radius:3px}
+  .breadcrumb .crumb:hover{background:var(--panel2);text-decoration:underline}
+  .breadcrumb .sep{color:var(--line)}
+  .breadcrumb .cur{color:var(--txt)}
+  /* ---------- Files row ---------- */
   .files-wrapper{
     display:flex;align-items:center;padding:10px 16px;
     border-bottom:1px solid var(--line);background:#0d1117;
   }
-  .files{ /* This is the actual scrollable chips container */
-    flex:1;
-    overflow-x:auto;
-    display:flex;
-    gap:8px;
-    padding:0; /* No internal padding, wrapper handles it */
-    /* Hide scrollbar for aesthetic, but keep functionality */
-    -ms-overflow-style: none;  /* IE and Edge */
-    scrollbar-width: none;  /* Firefox */
+  .files{
+    flex:1;overflow-x:auto;display:flex;gap:8px;padding:0;
+    -ms-overflow-style:none;scrollbar-width:none;
   }
-  .files::-webkit-scrollbar {
-    display: none; /* Chrome, Safari, Opera */
-  }
+  .files::-webkit-scrollbar{display:none}
   .scroll-arrow{
-    flex-shrink:0; /* Prevent arrows from shrinking */
-    width:28px;height:28px;
+    flex-shrink:0;width:28px;height:28px;
     display:flex;align-items:center;justify-content:center;
     font-size:20px;color:var(--dim);cursor:pointer;user-select:none;
-    transition:color .15s, opacity .2s;
-    opacity:0; /* Hidden by default */
+    transition:color .15s,opacity .2s;opacity:0;
     background:var(--panel);border-radius:6px;
   }
   .scroll-arrow:hover{color:var(--accent)}
   .scroll-arrow.visible{opacity:1}
-  .scroll-arrow.left{margin-right:8px;}
-  .scroll-arrow.right{margin-left:8px;}
+  .scroll-arrow.left{margin-right:8px}
+  .scroll-arrow.right{margin-left:8px}
   .chip{white-space:nowrap;padding:7px 12px;border:1px solid var(--line);
     border-radius:6px;font-family:var(--mono);font-size:12px;cursor:pointer;
     color:var(--dim);background:var(--panel);transition:.12s}
   .chip:hover{border-color:var(--accent2);color:var(--txt)}
   .chip.sel{border-color:var(--accent);color:var(--accent);background:#1d1607}
+  /* carpeta navegable */
+  .chip.dir{border-style:dashed;color:var(--accent2);font-weight:600}
+  .chip.dir:hover{border-color:var(--accent2);color:var(--txt);background:var(--panel2)}
   iframe{width:100%;height:100%;border:none;background:#525659;display:block}
   /* gallery */
   .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
@@ -187,6 +189,7 @@
         <button id="tabImg" onclick="setMode('img')">▦ Fotos <span id="nImg"></span></button>
       </div>
     </div>
+    <div class="breadcrumb" id="breadcrumb"></div>
     <div class="files-wrapper" id="filesWrapper" style="display:none">
       <div class="scroll-arrow left" id="scrollLeft">‹</div>
       <div class="files" id="files"></div>
@@ -211,7 +214,13 @@
 </div>
 
 <script>
-let ITEMS = [], current = null, mode = 'pdf', gallery = [], lbIdx = 0, timer = null, filesContainer, scrollLeftBtn, scrollRightBtn;
+let ITEMS = [], current = null, mode = 'pdf', gallery = [], lbIdx = 0, timer = null;
+let filesContainer, scrollLeftBtn, scrollRightBtn;
+
+// Estado del navegador de carpetas
+let browseRootPath = '';   // ruta relativa de la carpeta P/N en drawings
+let browsePathParts = [];  // subcarpetas navegadas después del root
+let browseFiles = [];      // archivos del nivel actual (para showBrowseFile)
 
 const $ = s => document.querySelector(s);
 
@@ -232,7 +241,7 @@ function renderList(){
       <div class="id">${esc(it.pn)}</div>
       <div class="tags">
         ${it.categorias.map(c=>`<span class="tag">${esc(c)}</span>`).join('')}
-        ${it.nPdf?`<span class="count pdf">▤ ${it.nPdf}</span>`:''}
+        ${it.nPdf?`<span class="count pdf">▤ ${it.nPdf}</span>`:(it.drawingsDirs&&it.drawingsDirs.length?'<span class="count pdf">▤ dwg</span>':'')}
         ${it.nFoto?`<span class="count img">▦ ${it.nFoto}</span>`:''}
       </div>
     </div>`).join('');
@@ -244,11 +253,12 @@ function seleccionarPn(i){
   $('#toolbar').style.display='flex';
   $('#vTitle').textContent = current.pn;
   $('#vCat').textContent = current.categorias.join(' · ') || '';
-  $('#nPdf').textContent = current.nPdf?`(${current.nPdf})`:'';
-  $('#nImg').textContent = current.nFoto?`(${current.nFoto})`:'';
-  $('#tabPdf').disabled = !current.nPdf;
+  const hasDwg = current.nPdf > 0 || (current.drawingsDirs && current.drawingsDirs.length > 0);
+  $('#nPdf').textContent = current.nPdf ? `(${current.nPdf})` : '';
+  $('#nImg').textContent = current.nFoto ? `(${current.nFoto})` : '';
+  $('#tabPdf').disabled = !hasDwg;
   $('#tabImg').disabled = !current.nFoto;
-  setMode(current.nPdf ? 'pdf' : 'img');
+  setMode(hasDwg ? 'pdf' : 'img');
   if(window.innerWidth<=760) $('#aside').classList.add('hide');
 }
 
@@ -259,32 +269,139 @@ function setMode(m){
   if(m==='pdf') renderPdf(); else renderImg();
 }
 
+// ---- Modo DRAWINGS: navegador de carpetas ----
+
 function renderPdf(){
-  const files = current.pdfs;
-  $('#filesWrapper').style.display = files.length > 0 ? 'flex' : 'none';
-  $('#files').style.display = '';   // restaurar si venimos del modo fotos
+  $('#files').style.display = '';
+  browsePathParts = [];
 
-  $('#files').innerHTML = files.map((f,i)=>
-    `<div class="chip ${i===0?'sel':''}" onclick="showPdf(${i},this)">
-      ${f.subcarpeta ? `<span style="color:var(--dim);font-size:10px">${esc(f.subcarpeta)} / </span>` : ''}${f.nombre.toLowerCase().endsWith('.dwg') ? '<span style="color:var(--accent)">DWG</span> ' : ''}${esc(f.nombre)}
-    </div>`).join('');
-
-  if(files.length > 0) showPdf(0);
-  updateScrollArrows(); // Llamar después de renderizar los chips
+  if (current.drawingsDirs && current.drawingsDirs.length > 0) {
+    // Modo navegador: usar la carpeta P/N del NAS directamente
+    browseRootPath = current.drawingsDirs[0];
+    browseDir();
+  } else {
+    // Fallback: lista plana de PDFs indexados
+    $('#breadcrumb').style.display = 'none';
+    const files = current.pdfs;
+    $('#filesWrapper').style.display = files.length > 0 ? 'flex' : 'none';
+    $('#files').innerHTML = files.map((f,i)=>
+      `<div class="chip ${i===0?'sel':''}" onclick="showPdf(${i},this)">
+        ${f.subcarpeta?`<span style="color:var(--dim);font-size:10px">${esc(f.subcarpeta)} / </span>`:''}${f.nombre.toLowerCase().endsWith('.dwg')?'<span style="color:var(--accent)">DWG</span> ':''}${esc(f.nombre)}
+      </div>`).join('');
+    if(files.length > 0) showPdf(0);
+    updateScrollArrows();
+  }
 }
+
+async function browseDir(){
+  const relPath = browseRootPath + (browsePathParts.length ? '/' + browsePathParts.join('/') : '');
+
+  // Breadcrumb
+  const crumbs = [current.pn, ...browsePathParts];
+  const bc = $('#breadcrumb');
+  if (crumbs.length > 1) {
+    bc.style.display = 'flex';
+    bc.innerHTML = crumbs.map((label, i) => {
+      if (i === crumbs.length - 1)
+        return `<span class="cur">${esc(label)}</span>`;
+      return `<span class="crumb" onclick="browseBack(${i})">${esc(label)}</span>`;
+    }).join('<span class="sep"> › </span>');
+  } else {
+    bc.style.display = 'none';
+  }
+
+  // Obtener contenido de la carpeta
+  let d;
+  try {
+    const r = await fetch('/api/browse?source=drawings&path=' + encodeURIComponent(relPath));
+    d = await r.json();
+  } catch(e) {
+    $('#stage').innerHTML = `<div class="empty"><h2>Error de conexión</h2><p>${esc(String(e))}</p></div>`;
+    return;
+  }
+  browseFiles = d.archivos || [];
+
+  // Renderizar: primero carpetas, luego archivos
+  const chips = [];
+  for (const sub of (d.subcarpetas || [])) {
+    chips.push(`<div class="chip dir" onclick="browseInto('${escJs(sub)}')">▸ ${esc(sub)}</div>`);
+  }
+  for (let i = 0; i < browseFiles.length; i++) {
+    const f = browseFiles[i];
+    const isDwg = f.nombre.toLowerCase().endsWith('.dwg');
+    chips.push(`<div class="chip" onclick="showBrowseFile(${i},this)">${isDwg?'<span style="color:var(--accent)">DWG</span> ':''}${esc(f.nombre)}</div>`);
+  }
+
+  $('#files').innerHTML = chips.join('');
+  $('#filesWrapper').style.display = chips.length > 0 ? 'flex' : 'none';
+
+  if (browseFiles.length > 0) {
+    // Mostrar primer archivo automáticamente
+    const firstFileChip = $('#files .chip:not(.dir)');
+    if (firstFileChip) firstFileChip.classList.add('sel');
+    showBrowseFileByObj(browseFiles[0]);
+  } else if (!d.subcarpetas || !d.subcarpetas.length) {
+    $('#stage').innerHTML = `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg><h2>Carpeta vacía</h2><p>No hay archivos PDF ni DWG en esta carpeta.</p></div>`;
+  } else {
+    // Solo subcarpetas, no hay archivo para mostrar todavía
+    $('#stage').innerHTML = `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg><h2>Selecciona una carpeta</h2><p>Haz clic en una carpeta (▸) para ver su contenido.</p></div>`;
+  }
+
+  updateScrollArrows();
+}
+
+function browseInto(folderName){
+  browsePathParts.push(folderName);
+  browseDir();
+}
+
+function browseBack(level){
+  // level=0 → volver al root del P/N; level=n → volver a ese nivel
+  browsePathParts = browsePathParts.slice(0, level);
+  browseDir();
+}
+
+function showBrowseFile(i, chip){
+  if(chip){
+    document.querySelectorAll('#files .chip').forEach(c=>c.classList.remove('sel'));
+    chip.classList.add('sel');
+  }
+  showBrowseFileByObj(browseFiles[i]);
+}
+
+function showBrowseFileByObj(f){
+  if(!f) return;
+  if(f.nombre.toLowerCase().endsWith('.dwg')){
+    $('#stage').innerHTML = `
+      <div class="empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="stroke:var(--accent);width:64px;height:64px">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+        </svg>
+        <h2 style="color:var(--txt)">Archivo AutoCAD (DWG)</h2>
+        <p>Los navegadores no pueden mostrar DWG directamente.</p>
+        <a href="${f.url}" download="${f.nombre}" class="btn" style="margin-top:15px;border-color:var(--accent);color:var(--accent);text-decoration:none;display:inline-block;padding:10px 20px">
+          Descargar ${esc(f.nombre)}
+        </a>
+      </div>`;
+  } else {
+    $('#stage').innerHTML = `<iframe src="${f.url}#toolbar=1&navpanes=0&zoom=100"></iframe>`;
+  }
+}
+
+// Fallback para PDFs indexados directamente (sin drawingsDirs)
 function showPdf(i, chip){
   if(chip){document.querySelectorAll('#files .chip').forEach(c=>c.classList.remove('sel'));chip.classList.add('sel');}
   const f = current.pdfs[i];
-  if (f.nombre.toLowerCase().endsWith('.dwg')) {
+  if(f.nombre.toLowerCase().endsWith('.dwg')){
     $('#stage').innerHTML = `
       <div class="empty">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="stroke:var(--accent); width:64px; height:64px">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="stroke:var(--accent);width:64px;height:64px">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
         </svg>
-        <h2 style="color:var(--txt)">Archivo de AutoCAD (DWG)</h2>
-        <p>Los navegadores no pueden mostrar archivos DWG directamente.</p>
-        <a href="${f.url}" download="${f.nombre}" class="btn" style="margin-top:15px; border-color:var(--accent); color:var(--accent); text-decoration:none; display:inline-block; padding:10px 20px">
-          📥 Descargar DRAWINGS
+        <h2 style="color:var(--txt)">Archivo AutoCAD (DWG)</h2>
+        <p>Los navegadores no pueden mostrar DWG directamente.</p>
+        <a href="${f.url}" download="${f.nombre}" class="btn" style="margin-top:15px;border-color:var(--accent);color:var(--accent);text-decoration:none;display:inline-block;padding:10px 20px">
+          Descargar ${esc(f.nombre)}
         </a>
       </div>`;
   } else {
@@ -293,7 +410,8 @@ function showPdf(i, chip){
 }
 
 function renderImg(){
-  $('#filesWrapper').style.display='none';
+  $('#filesWrapper').style.display = 'none';
+  $('#breadcrumb').style.display = 'none';
   gallery = current.fotos;
   $('#stage').innerHTML = `<div class="gallery">${
     gallery.map((f,i)=>`
@@ -302,7 +420,7 @@ function renderImg(){
         <div class="cap">${esc(f.nombre)}</div>
       </div>`).join('')
   }</div>`;
-  updateScrollArrows(); // Llamar también para asegurar que las flechas se oculten si no hay barra de archivos
+  updateScrollArrows();
 }
 
 /* lightbox */
@@ -328,37 +446,32 @@ $('#reindex').addEventListener('click', async ()=>{
   $('#reindex').textContent='↻ Reindexar'; $('#reindex').disabled=false;
 });
 
-// --- Funcionalidad de desplazamiento de la barra de archivos ---
-function initScrollArrows() {
+/* scroll arrows */
+function initScrollArrows(){
   filesContainer = $('#files');
   scrollLeftBtn = $('#scrollLeft');
   scrollRightBtn = $('#scrollRight');
-
-  scrollLeftBtn.addEventListener('click', () => filesContainer.scrollBy({ left: -100, behavior: 'smooth' }));
-  scrollRightBtn.addEventListener('click', () => filesContainer.scrollBy({ left: 100, behavior: 'smooth' }));
+  scrollLeftBtn.addEventListener('click', ()=>filesContainer.scrollBy({left:-150,behavior:'smooth'}));
+  scrollRightBtn.addEventListener('click', ()=>filesContainer.scrollBy({left:150,behavior:'smooth'}));
   filesContainer.addEventListener('scroll', updateScrollArrows);
   window.addEventListener('resize', updateScrollArrows);
 }
-
-function updateScrollArrows() {
-  if (!filesContainer || $('#filesWrapper').style.display === 'none') {
+function updateScrollArrows(){
+  if(!filesContainer || $('#filesWrapper').style.display==='none'){
     scrollLeftBtn.classList.remove('visible');
     scrollRightBtn.classList.remove('visible');
     return;
   }
-
-  const { scrollWidth, clientWidth, scrollLeft } = filesContainer;
-  const hasOverflow = scrollWidth > clientWidth;
-
-  scrollLeftBtn.classList.toggle('visible', hasOverflow && scrollLeft > 0);
-  scrollRightBtn.classList.toggle('visible', hasOverflow && (scrollLeft + clientWidth < scrollWidth));
+  const {scrollWidth,clientWidth,scrollLeft} = filesContainer;
+  const over = scrollWidth > clientWidth;
+  scrollLeftBtn.classList.toggle('visible', over && scrollLeft > 0);
+  scrollRightBtn.classList.toggle('visible', over && (scrollLeft+clientWidth < scrollWidth));
 }
-
-// Inicializar las flechas de desplazamiento cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', initScrollArrows);
 
-// --- Utilidades ---
+/* utils */
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function escJs(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
 
 load();
 </script>
