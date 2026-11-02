@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';            // accesible desde otras PCs de la red
 
 // ---- Rutas del servidor de archivos --------------------------------
@@ -88,22 +88,46 @@ function escanear(base, tipo, index, nivel = 0) {
   }
 }
 
+let ERROR_INDICE = null;
+
+// Una fuente vacía o ilegible indica que el NAS no está montado.
+// Devuelve la descripción del problema, o null si todas las fuentes están bien.
+function revisarFuentes() {
+  const problemas = [];
+  for (const [key, ruta] of Object.entries(FUENTES)) {
+    try {
+      if (fs.readdirSync(ruta).length === 0) {
+        problemas.push(`${key} está vacía (${ruta}), ¿NAS sin montar?`);
+      } else {
+        console.log(`[OK] Ruta accesible: ${key} -> ${ruta}`);
+      }
+    } catch (err) {
+      problemas.push(`${key} no es accesible (${ruta}): ${err.code}`);
+    }
+  }
+  return problemas.length ? problemas.join('; ') : null;
+}
+
 function construirIndice() {
   console.log('--- Iniciando escaneo del NAS ---');
   const t0 = Date.now();
 
-  for (const [key, ruta] of Object.entries(FUENTES)) {
-    try {
-      fs.accessSync(ruta, fs.constants.R_OK);
-      console.log(`[OK] Ruta accesible: ${key} -> ${ruta}`);
-    } catch (err) {
-      console.warn(`¡ADVERTENCIA!: La ruta de ${key} no es accesible: ${ruta}`);
-    }
+  ERROR_INDICE = revisarFuentes();
+  if (ERROR_INDICE) {
+    console.warn(`¡ERROR! Escaneo cancelado, se conserva el índice anterior: ${ERROR_INDICE}`);
+    return null;
   }
 
   const index = {};
   escanear(FUENTES.drawings, 'drawings', index);
   escanear(FUENTES.fotos, 'fotos', index);
+
+  // Si el NAS se cayó durante el escaneo, el resultado quedó incompleto
+  ERROR_INDICE = revisarFuentes();
+  if (ERROR_INDICE) {
+    console.warn(`¡ERROR! Escaneo descartado, se conserva el índice anterior: ${ERROR_INDICE}`);
+    return null;
+  }
 
   let nArchivos = 0;
   const lista = Object.values(index)
@@ -157,7 +181,7 @@ let CACHE = cargarCache() || construirIndice();
 // --------------------------------------------------------------------
 app.get('/api/index', (req, res) => {
   const q = (req.query.q || '').trim().toUpperCase();
-  if (!CACHE) return res.json({ generado: null, total: 0, items: [], error: 'Caché no disponible' });
+  if (!CACHE) return res.json({ generado: null, total: 0, items: [], error: ERROR_INDICE || 'Caché no disponible' });
   if (!q) return res.json(CACHE);
   const items = CACHE.items.filter(it =>
     it.pn.toUpperCase().includes(q) ||
@@ -167,7 +191,9 @@ app.get('/api/index', (req, res) => {
 });
 
 app.get('/api/reindex', (req, res) => {
-  CACHE = construirIndice();
+  const datos = construirIndice();
+  if (!datos) return res.status(503).json({ ok: false, error: ERROR_INDICE });
+  CACHE = datos;
   res.json({ ok: true, total: CACHE.total, generado: CACHE.generado });
 });
 

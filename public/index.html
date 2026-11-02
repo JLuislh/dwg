@@ -229,7 +229,9 @@ async function load(q=''){
   const d = await r.json();
   ITEMS = d.items;
   $('#count').innerHTML = '<b>'+d.total+'</b> P/N';
-  $('#stamp').textContent = 'idx ' + new Date(d.generado).toLocaleString('es-GT',{dateStyle:'short',timeStyle:'short'});
+  $('#stamp').textContent = d.generado
+    ? 'idx ' + new Date(d.generado).toLocaleString('es-GT',{dateStyle:'short',timeStyle:'short'})
+    : 'sin índice: ' + d.error;
   renderList();
 }
 
@@ -510,7 +512,11 @@ $('#q').addEventListener('input', e=>{
 
 $('#reindex').addEventListener('click', async ()=>{
   $('#reindex').textContent='Escaneando…'; $('#reindex').disabled=true;
-  await fetch('/api/reindex');
+  const r = await fetch('/api/reindex');
+  if(!r.ok){
+    const d = await r.json();
+    alert('No se pudo reindexar, se conserva el índice anterior.\n\n' + d.error);
+  }
   await load($('#q').value);
   $('#reindex').textContent='↻ Reindexar'; $('#reindex').disabled=false;
 });
