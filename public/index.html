@@ -87,11 +87,13 @@
   }
   .rutas .ruta{display:flex;align-items:center;gap:8px;min-width:0}
   .rutas code{flex:1;min-width:0;color:var(--dim);font-family:inherit;overflow-wrap:anywhere;user-select:all}
-  .rutas button{
+  .rutas button,.rutas .abrir{
     flex-shrink:0;background:var(--panel2);border:1px solid var(--line);border-radius:3px;
     color:var(--accent2);font-family:inherit;font-size:11px;padding:2px 8px;cursor:pointer;
+    text-decoration:none;line-height:normal;
   }
-  .rutas button:hover{border-color:var(--accent2)}
+  .rutas button:hover,.rutas .abrir:hover{border-color:var(--accent2)}
+  .rutas .instalar{flex-shrink:0;color:var(--dim);font-size:10px}
   /* ---------- Breadcrumb ---------- */
   .breadcrumb{
     display:none;align-items:center;gap:4px;padding:5px 16px;
@@ -308,6 +310,7 @@ const RUTAS_NAS = {
   drawings: '\\\\nas\\Compartida Produccion\\DRAWINGS',
   fotos: '\\\\nas\\Compartida Produccion\\FOTO DE PIEZAS (desde 2019)'
 };
+const ES_WINDOWS = /Windows/.test(navigator.userAgent);
 let rutasActuales = [];
 
 function rutaWindows(fuente, dir){
@@ -321,7 +324,9 @@ function mostrarRutas(rutas){
   el.innerHTML = rutasActuales.map((r,i)=>`
     <div class="ruta">
       <code>${esc(r)}</code>
+      ${ES_WINDOWS?`<a class="abrir" href="visorpn:${encodeURIComponent(r)}" title="Abrir en el Explorador de Windows">Abrir</a>`:''}
       <button onclick="copiarRuta(${i},this)" title="Pégala en la barra de direcciones del Explorador de Windows">Copiar</button>
+      ${ES_WINDOWS&&i===0?`<a class="instalar" href="/windows/instalar-abrir-carpetas.bat" download title="Se instala una sola vez en cada PC">¿No abre? Instalar</a>`:''}
     </div>`).join('');
 }
 
