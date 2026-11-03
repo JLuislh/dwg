@@ -79,6 +79,19 @@
   .switch button.on{background:var(--accent);color:#1a1200;font-weight:600}
   .switch button:disabled{opacity:.35;cursor:not-allowed}
   .stage{flex:1;overflow-y:auto;overflow-x:hidden;position:relative;min-height:0}
+  /* ---------- Ruta de Windows ---------- */
+  .rutas{
+    display:none;flex-direction:column;gap:2px;padding:4px 16px;max-height:92px;overflow-y:auto;
+    flex-shrink:0;background:var(--panel);border-bottom:1px solid var(--line);
+    font-size:11px;font-family:var(--mono);
+  }
+  .rutas .ruta{display:flex;align-items:center;gap:8px;min-width:0}
+  .rutas code{flex:1;min-width:0;color:var(--dim);font-family:inherit;overflow-wrap:anywhere;user-select:all}
+  .rutas button{
+    flex-shrink:0;background:var(--panel2);border:1px solid var(--line);border-radius:3px;
+    color:var(--accent2);font-family:inherit;font-size:11px;padding:2px 8px;cursor:pointer;
+  }
+  .rutas button:hover{border-color:var(--accent2)}
   /* ---------- Breadcrumb ---------- */
   .breadcrumb{
     display:none;align-items:center;gap:4px;padding:5px 16px;
@@ -136,18 +149,29 @@
   .empty p{font-size:13px;font-family:var(--mono);max-width:340px;line-height:1.6}
   /* lightbox */
   .lb{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;
-    align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:14px}
+    align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:14px;
+    overflow:hidden}
   .lb.show{display:flex}
   .lb img{max-width:92vw;max-height:82vh;object-fit:contain;
-    box-shadow:0 20px 60px rgba(0,0,0,.6)}
-  .lb .cap{font-family:var(--mono);font-size:13px;color:var(--dim)}
+    box-shadow:0 20px 60px rgba(0,0,0,.6);transform-origin:0 0;
+    touch-action:none;user-select:none;cursor:zoom-in}
+  .lb img.mover{cursor:grab}
+  .lb img.mover:active{cursor:grabbing}
+  .lb .cap{font-family:var(--mono);font-size:13px;color:var(--dim);position:relative;z-index:2;
+    background:rgba(0,0,0,.7);padding:2px 8px;border-radius:4px}
   .lb .x{position:absolute;top:20px;right:24px;font-size:30px;color:#fff;
-    cursor:pointer;line-height:1;opacity:.7}
+    cursor:pointer;line-height:1;opacity:.7;z-index:2;text-shadow:0 0 6px #000,0 0 2px #000}
   .lb .x:hover{opacity:1}
   .lb .nav{position:absolute;top:50%;transform:translateY(-50%);font-size:44px;
-    color:#fff;cursor:pointer;opacity:.5;padding:0 22px;user-select:none}
+    color:#fff;cursor:pointer;opacity:.7;padding:0 22px;user-select:none;z-index:2;text-shadow:0 0 6px #000,0 0 2px #000}
   .lb .nav:hover{opacity:1}
   .lb .prev{left:0} .lb .next{right:0}
+  .lb .zoom{position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:2;
+    display:flex;align-items:center;gap:4px;background:rgba(0,0,0,.7);border-radius:6px;padding:4px}
+  .lb .zoom button{background:none;border:0;color:#fff;font-family:var(--mono);font-size:16px;
+    cursor:pointer;min-width:32px;height:32px;border-radius:4px;opacity:.8}
+  .lb .zoom button:hover{opacity:1;background:rgba(255,255,255,.15)}
+  .lb .zoom #lbPct{font-size:13px;min-width:58px}
   /* scrollbar */
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-track{background:transparent}
@@ -189,6 +213,7 @@
         <button id="tabImg" onclick="setMode('img')">▦ Fotos <span id="nImg"></span></button>
       </div>
     </div>
+    <div class="rutas" id="rutas"></div>
     <div class="breadcrumb" id="breadcrumb"></div>
     <div class="files-wrapper" id="filesWrapper" style="display:none">
       <div class="scroll-arrow left" id="scrollLeft">‹</div>
@@ -209,7 +234,12 @@
   <span class="x" onclick="closeLb()">×</span>
   <span class="nav prev" onclick="stepLb(-1)">‹</span>
   <span class="nav next" onclick="stepLb(1)">›</span>
-  <img id="lbImg" src="">
+  <div class="zoom">
+    <button onclick="zoomCentro(1/ZOOM_PASO)" title="Alejar (tecla -)">−</button>
+    <button id="lbPct" onclick="resetZoom()" title="Restablecer (tecla 0)">100%</button>
+    <button onclick="zoomCentro(ZOOM_PASO)" title="Acercar (tecla +)">+</button>
+  </div>
+  <img id="lbImg" src="" draggable="false">
   <div class="cap" id="lbCap"></div>
 </div>
 
@@ -271,10 +301,66 @@ function setMode(m){
   if(m==='pdf') renderPdf(); else renderImg();
 }
 
+// ---- Ruta de la carpeta en Windows ----
+// Los navegadores bloquean los enlaces file:// desde http://, por eso se copia la ruta
+
+const RUTAS_NAS = {
+  drawings: '\\\\nas\\Compartida Produccion\\DRAWINGS',
+  fotos: '\\\\nas\\Compartida Produccion\\FOTO DE PIEZAS (desde 2019)'
+};
+let rutasActuales = [];
+
+function rutaWindows(fuente, dir){
+  return RUTAS_NAS[fuente] + '\\' + dir.split('/').join('\\');
+}
+
+function mostrarRutas(rutas){
+  rutasActuales = rutas;
+  const el = $('#rutas');
+  el.style.display = rutasActuales.length ? 'flex' : 'none';
+  el.innerHTML = rutasActuales.map((r,i)=>`
+    <div class="ruta">
+      <code>${esc(r)}</code>
+      <button onclick="copiarRuta(${i},this)" title="Pégala en la barra de direcciones del Explorador de Windows">Copiar</button>
+    </div>`).join('');
+}
+
+// Carpetas P/N de las fotos: la ruta de cada foto sin el archivo ni su subcarpeta.
+// La fuente sale de la URL porque también hay imágenes dentro de DRAWINGS.
+function rutasFotos(){
+  const rutas = new Set();
+  for(const f of current.fotos){
+    const [fuente, ...partes] = f.url.split('/').slice(2,-1).map(decodeURIComponent);
+    const nSub = f.subcarpeta ? f.subcarpeta.split('/').length : 0;
+    rutas.add(rutaWindows(fuente, partes.slice(0, partes.length-nSub).join('/')));
+  }
+  return [...rutas];
+}
+
+async function copiarRuta(i, btn){
+  const ruta = rutasActuales[i];
+  let ok = false;
+  try {
+    // navigator.clipboard solo existe en https o localhost; desde http://IP se usa execCommand
+    if(navigator.clipboard){ await navigator.clipboard.writeText(ruta); ok = true; }
+    else {
+      const t = document.createElement('textarea');
+      t.value = ruta;
+      document.body.appendChild(t);
+      t.select();
+      ok = document.execCommand('copy');
+      t.remove();
+    }
+  } catch(e){ ok = false; }
+  btn.textContent = ok ? '¡Copiada!' : 'No se pudo';
+  setTimeout(()=>{ btn.textContent = 'Copiar'; }, 1500);
+}
+
 // ---- Modo DRAWINGS: navegador de carpetas ----
 
 function renderPdf(){
   $('#files').style.display = '';
+  mostrarRutas([]);
   browsePathParts = [];
   browseRootPath = null;
 
@@ -300,6 +386,7 @@ function renderPdf(){
 }
 
 function mostrarSelectorUbicacion(){
+  mostrarRutas([]);
   $('#breadcrumb').style.display = 'none';
   const chips = current.drawingsDirs.map((dir, i) => {
     // Mostrar la ruta de categoría (todo excepto el último segmento = nombre PN)
@@ -335,6 +422,7 @@ function volverAlSelector(){
 
 async function browseDir(){
   const relPath = browseRootPath + (browsePathParts.length ? '/' + browsePathParts.join('/') : '');
+  mostrarRutas([rutaWindows('drawings', relPath)]);
 
   // Breadcrumb
   const bc = $('#breadcrumb');
@@ -481,6 +569,7 @@ async function mostrarPdf(url, nombre){
 }
 
 function renderImg(){
+  mostrarRutas(rutasFotos());
   $('#filesWrapper').style.display = 'none';
   $('#breadcrumb').style.display = 'none';
   gallery = current.fotos;
@@ -498,11 +587,77 @@ function renderImg(){
 function openLb(i){ lbIdx=i; paintLb(); $('#lb').classList.add('show'); }
 function closeLb(){ $('#lb').classList.remove('show'); }
 function stepLb(d){ lbIdx=(lbIdx+d+gallery.length)%gallery.length; paintLb(); }
-function paintLb(){ const f=gallery[lbIdx]; $('#lbImg').src=f.url; $('#lbCap').textContent=f.nombre+'  ('+(lbIdx+1)+'/'+gallery.length+')'; }
+function paintLb(){ const f=gallery[lbIdx]; resetZoom(); $('#lbImg').src=f.url; $('#lbCap').textContent=f.nombre+'  ('+(lbIdx+1)+'/'+gallery.length+')'; }
 document.addEventListener('keydown',e=>{
   if(!$('#lb').classList.contains('show'))return;
   if(e.key==='Escape')closeLb(); if(e.key==='ArrowRight')stepLb(1); if(e.key==='ArrowLeft')stepLb(-1);
+  if(e.key==='+'||e.key==='=')zoomCentro(ZOOM_PASO); if(e.key==='-')zoomCentro(1/ZOOM_PASO); if(e.key==='0')resetZoom();
 });
+
+/* zoom de la foto: rueda, doble clic, arrastre y pellizco */
+const ZOOM_PASO = 1.25, ZOOM_MAX = 10, ZOOM_DOBLE = 3;
+let lbZ = 1, lbX = 0, lbY = 0, lbPinch = null;
+const lbPunteros = new Map();
+
+function pintarZoom(){
+  const img = $('#lbImg');
+  // Ajustar el desplazamiento: si la foto cabe se centra, si no, sin dejar huecos
+  const ajustar = (t, base, tam, vista) => {
+    const w = tam*lbZ;
+    return w <= vista ? (vista-w)/2 - base : Math.min(-base, Math.max(vista-w-base, t));
+  };
+  if(lbZ === 1){ lbX = lbY = 0; }
+  else {
+    lbX = ajustar(lbX, img.offsetLeft, img.offsetWidth, innerWidth);
+    lbY = ajustar(lbY, img.offsetTop, img.offsetHeight, innerHeight);
+  }
+  img.style.transform = `translate(${lbX}px,${lbY}px) scale(${lbZ})`;
+  img.classList.toggle('mover', lbZ > 1);
+  $('#lbPct').textContent = Math.round(lbZ*100)+'%';
+}
+function resetZoom(){ lbZ = 1; pintarZoom(); }
+function zoomEn(factor, cx, cy){
+  const nuevo = Math.min(ZOOM_MAX, Math.max(1, lbZ*factor));
+  const r = $('#lbImg').getBoundingClientRect(), k = nuevo/lbZ;
+  // Mantener fijo el punto de la foto que está bajo el cursor
+  lbX += (cx-r.left)*(1-k);
+  lbY += (cy-r.top)*(1-k);
+  lbZ = nuevo;
+  pintarZoom();
+}
+function zoomCentro(factor){ zoomEn(factor, innerWidth/2, innerHeight/2); }
+
+$('#lb').addEventListener('wheel', e=>{
+  e.preventDefault();
+  zoomEn(e.deltaY < 0 ? ZOOM_PASO : 1/ZOOM_PASO, e.clientX, e.clientY);
+}, {passive:false});
+
+$('#lbImg').addEventListener('dblclick', e=>{
+  if(lbZ > 1) resetZoom(); else zoomEn(ZOOM_DOBLE, e.clientX, e.clientY);
+});
+$('#lbImg').addEventListener('pointerdown', e=>{
+  e.target.setPointerCapture(e.pointerId);
+  lbPunteros.set(e.pointerId, {x:e.clientX, y:e.clientY});
+});
+$('#lbImg').addEventListener('pointermove', e=>{
+  const previo = lbPunteros.get(e.pointerId);
+  if(!previo) return;
+  lbPunteros.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(lbPunteros.size === 2){
+    const [a,b] = [...lbPunteros.values()];
+    const dist = Math.hypot(a.x-b.x, a.y-b.y);
+    if(lbPinch) zoomEn(dist/lbPinch, (a.x+b.x)/2, (a.y+b.y)/2);
+    lbPinch = dist;
+  } else if(lbZ > 1){
+    lbX += e.clientX-previo.x;
+    lbY += e.clientY-previo.y;
+    pintarZoom();
+  }
+});
+['pointerup','pointercancel'].forEach(t=>$('#lbImg').addEventListener(t, e=>{
+  lbPunteros.delete(e.pointerId);
+  lbPinch = null;
+}));
 
 /* search */
 $('#q').addEventListener('input', e=>{
